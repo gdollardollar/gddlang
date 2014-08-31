@@ -13,14 +13,17 @@ import argparse
 global __showwarnings, __showinfo
 
 def loginfo(str):
+    """Utility function to log information"""
     if __showinfo:
         print(str)
 
 def logwarning(str):
+    """Utility function to log warnings"""
     if __showwarnings:
         print('Warning: '+str)
 
 class LangError(Exception):
+    """Base class for exception created by this script"""
 
     def prefix(cls):
         return 'Error'
@@ -29,49 +32,61 @@ class LangError(Exception):
         return self.prefix() + ': '+ super(LangError, self).__str__()
 
 class LangParseError(LangError):
+    """Class for exception found while parsing"""
 
     def prefix(cls):
         return 'ParseError'
 
 class LanguageElement:
-    """Class encapsulating the key of the string and the different values.
-    """
+    """Class encapsulating the key of the string and the different values."""
 
-    # pretty comment pattern
+    # regex used to properly strip "pretty" (with repeated *) multiline comments
     pc_pattern = re.compile(r'^[ \t\f\v]*\*?[ \t\f\v]*(.*)$',re.MULTILINE)
 
     def __init__(self, key='', comment=''):
-        """
-        Keyword Arguments:
-        key -- The string key. Must not be None, must be normalized.
-        values -- A list containing the different values
-        """
+        """Keyword Arguments:
+
+        key    -- The string key. Must not be None, must be normalized.
+        values -- A list containing the different values"""
         self.key = key
         self.values = {}
         self.comment = "\n".join(self.pc_pattern.findall(comment.strip()))
 
+    #regex used to normalize keys
+    #TODO:  Normalizing keys is not a good idea because people might use 
+    #       accents in their string keys and this will then change the 
+    #       key in the output...
     key_pattern = re.compile('[^\w\s_]+')
-
     @classmethod
     def normalizekey(cls, key):
+        """Normalizes keys between android and ios"""
         u = unicodedata.normalize('NFKD', unicode(key, 'utf-8'))
         formattedKey = u.encode('ascii', 'ignore')
         return cls.key_pattern.sub(' ', formattedKey)
 
     def getvalue(self, language):
+        """Getter for string value
+
+        Keyword Arguments:
+        language -- the language your want the value for"""
         try:
             return self.values[language]
         except KeyError, IndexError:
             return None
 
     def setvalue(self, language, value):
+        """setter for string value
+
+        Keyword Arguments:
+        language -- the language the value is for
+        value    -- the value"""
         assert self.key, 'Tried to set a value {} without a key'.format(value)
         if value:
             self.values[language] = value
 
     def csv_columns(self, languages):
-        """Returns a generator representing a csv line
-        """
+        """Convernience method that returns a generator 
+        representing the string for a csv line"""
         a = [self.comment, self.key, ]
         a.extend(((self.getvalue(l) or '') for l in languages))
         return a
@@ -87,7 +102,8 @@ class LanguageElement:
     #     return '<string name="{}">{}</string>'.format(formattedKey, formattedValue)
 
     def cocoa_line(self, language):
-        """Returns a string corresponding to the cocoa line for the language indicated by languageIndex
+        """Convenience method that returns a string corresponding 
+        to the cocoa line for the provided language
 
         Keyword arguments:
         language -- the language
@@ -114,15 +130,19 @@ class LanguageElement:
         return str({ 'key' : self.key, 'values' : self.values, 'comment' : self.comment })
 
 class LanguageResource:
-    """Represents the Language Resources (contains all languages)
-    """
+    """Represents the Language Resources.
+    I-e several strings and several languages"""
 
     def __init__(self):
+        # an array containing the languages
         self.languages = []
+        # an array containing the LanguageElement instances
+        # it is repeated in keyedelements so that they can be accessed quickly
         self.elements = []
         self.keyedelements = {}
 
     def reset(self):
+        """Deletes all the resources"""
         self.languages = []
         self.elements = []
         self.keyedelements = {}
@@ -133,18 +153,29 @@ class LanguageResource:
         return self.languages
 
     def getkeyedelement(self, key):
+        """Returns the element corresponding to the provided key
+
+        Keyword arguments:
+        key -- the key"""
         try:
             return self.keyedelements[key]
         except KeyError, IndexError:
             return None
 
     def getvalue(self, key, language):
+        """Returns the value corresponding to the provided key and language
+
+        Keyword arguments:
+        key      -- the key
+        language -- the language"""
         try:
             return self.keyedelements[key].getvalue(language)
         except KeyError, IndexError:
             return None
 
     def missingvalues(self):
+        """Returns the array of the elements that are missing values 
+        in a language"""
         missing = { l : [] for l in self.languages}
         for k,v in self.keyedelements.iteritems():
             for l in self.languages:
@@ -163,7 +194,7 @@ class LanguageResource:
 
         Keyword arguments:
         comment -- a comment string
-        index -- the index at which the comment should be inserted, defaults to end of elements array.
+        index   -- the index at which the comment should be inserted, defaults to end of elements array.
         """
         # This is probably not optimized
         if index == None:
@@ -173,14 +204,13 @@ class LanguageResource:
 
     def __insertstring(self, key, string, comment, language, index=None):
         """ Inserts a new string, returns True if a new element was created.
-        Raises an exception if a value already exists for the corresponding key.
+        Raises a LangParseError if a value already exists for the corresponding key.
 
         Keyword arguments:
-        key -- the string key (str)
-        string --  a string (str)
+        key      -- the string key (str)
+        string   --  a string (str)
         language -- the language
-        index -- the desired position, if the key was already present, then it is ignored
-        """
+        index    -- the desired position, if the key was already present, then it is ignored"""
         # This is probably not optimized
         if index == None:
             index = len(self.elements)
@@ -199,8 +229,16 @@ class LanguageResource:
         return index
 
     def __constructelement(self, key, value, comment, language, usecomments = True, index=None):
-        """Returns the index of the inserted object
-        """
+        """Constructs and inserts a string element
+        Returns the index of the inserted object
+
+        Keyword arguments:
+        key         -- the key
+        value       -- the value
+        comment     -- a comment, can be None
+        language    -- the language
+        usecomments -- if false the comment is ignored, defaults to True
+        index       -- the preferred insertion index, defaults to None"""
         if key:
             try:
                 return self.__insertstring(key, value, (usecomments and comment) or '', language, index=index) 
@@ -213,6 +251,17 @@ class LanguageResource:
             return index
 
     def __constructelements(self, key, languagevaluedic, comment, usecomments = True, index = None):
+        """Constructs and inserts a string element given a value dictionary,
+        The element will contain the languages and values present in the 
+        provided language-value dictionary
+        Returns the index of the inserted object.
+        Used mostly when creating elements from a csv file.
+
+        Keyword arguments:
+        key              -- the keyindex
+        languagevaluedic -- a language-value dictionary containing all the values for the string
+        usecomments      -- if false the comment is ignored, defaults to True
+        index            -- the preferred insertion index, defaults to None"""
         if key and languagevaluedic:
             for l,v in languagevaluedic.iteritems():
                 # index won't change since we are adding values to the same key
@@ -227,6 +276,22 @@ class LanguageResource:
     # Cocoa reading
 
     def cocoa_feed(self, path, languages=None, tablename=None, usecomments=True, autocorrect=None):
+        """Creates all elements from a provided path, interpreting cocoa files.
+        Path can be:
+        - a directory containing .lproj directory
+        - a .lproj directory (the languages argument will be ignored, 
+            and the name of the directory will be used instead)
+        - a .strings file (in which case the language must be provided)
+        This method checks which kind of path it is and then calls the appropriate method
+
+        Keyword arguments:
+        path        -- the path
+        languages   -- the languages, defaults to None in which case the array will be determined automatically
+        tablename   -- the table name (e.g Localizable in Localizable.strings). Defaults to None, i-e all tables will be considered
+        usecomments -- if False the comments are ignored, defaults to True
+        autocorrect -- if None the user will be prompted in conflicts, 
+                       if True the conflicts will be autocorrected, 
+                       if False the conflicts will be ignored"""
         if os.path.isfile(path) and path.endswith('.strings'):
             language = None
             if languages:
@@ -242,6 +307,19 @@ class LanguageResource:
             raise LangError('Invalid path: ' + path)
 
     def cocoa_feeddir(self, path, languages=None, tablename=None, usecomments=True, autocorrect=None):
+        """Creates all elements from a provided directory path, interpreting cocoa files.
+        The directory must contain .lproj directories and not be a .lproj dir itself (see cocoa_feedlproj for that).
+        Calls cocoa_feedlproj with the right paths.
+        Returns autocorrect (which can change depending on the user's response to prompts)
+
+        Keyword arguments:
+        path        -- the path
+        languages   -- if provided, restricts the .lproj directory that are considered
+        tableName   -- the table name (e.g Localizable in Localizable.strings). Defaults to None, i-e all tables will be considered
+        usecomments -- if False the comments are ignored, defaults to True
+        autocorrect -- if None the user will be prompted in conflicts, 
+                       if True the conflicts will be autocorrected, 
+                       if False the conflicts will be ignored"""
         assert os.path.isdir(path) and not path.endswith('.lproj'), 'Incorrect dir path ' + path
 
         if languages:
@@ -259,6 +337,17 @@ class LanguageResource:
         return autocorrect
 
     def cocoa_feedlproj(self, path, tablename=None, usecomments=True, autocorrect=None):
+        """Creates all elements from a provided .lproj directory path, interpreting cocoa files.
+        Calls cocoa_feedstrings with the right paths.
+        Returns autocorrect (which can change depending on the user's response to prompts)
+
+        Keyword arguments:
+        path        -- the path
+        tableName   -- the table name (e.g Localizable in Localizable.strings). Defaults to None, i-e all tables will be considered
+        usecomments -- if False the comments are ignored, defaults to True
+        autocorrect -- if None the user will be prompted in conflicts, 
+                       if True the conflicts will be autocorrected, 
+                       if False the conflicts will be ignored"""
         assert path.endswith('.lproj') and os.path.isdir(path), 'Incorrect lproj path ' + path
         language = os.path.basename(path)[:-6]
         if tablename:
@@ -304,7 +393,7 @@ class LanguageResource:
                                 ,re.VERBOSE)
 
     def cocoa_feedstrings(self, filepath, language=None, usecomments=True, autocorrect=None):
-        """Parses a cocoa file and stores its values
+        """Parses a cocoa .strings file and stores its values
 
         Only supported schemes are (ignoring white spaces):
 
@@ -440,8 +529,7 @@ class LanguageResource:
         return autocorrect
 
     def __cocoa_handlecorrection(self, key, value, comment, language, usecomments, autocorrect, index):
-        """Returns (autocorrect, insertindex)
-        """
+        """Returns (autocorrect, insertindex)"""
         if autocorrect == None:
             i = raw_input('Cocoa parse error (You probably forgot a ;):\n'\
                           '    key = "{}"\n'\
