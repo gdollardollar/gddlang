@@ -471,7 +471,7 @@ class LanguageResource:
                     continue
 
                 # Using regex
-                m = LanguageResource.cocoa_pattern.match(line)
+                m = cocoa_pattern.match(line)
                 if m:
                     (tempkey, tempvalue, tempcomment, tempterm) = ( m.group('key'), m.group('val'), m.group('com'), m.group('sc')!=None )
 
